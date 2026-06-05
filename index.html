@@ -8,16 +8,15 @@
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background-color: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
-        button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 8px; background-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); cursor: pointer; }
         #status { color: #888; font-size: 14px; min-height: 20px; }
+        #result { font-size: 14px; word-break: break-all; }
         #reader { max-width: 100%; margin: 16px auto; }
     </style>
 </head>
 <body>
 
     <h2>Сканер QR-кодов</h2>
-    <button id="scan-btn">Открыть камеру</button>
-    <p id="status"></p>
+    <p id="status">Запуск камеры...</p>
     <p id="result"></p>
     <div id="reader" hidden></div>
 
@@ -26,7 +25,6 @@
         const statusEl = document.getElementById('status');
         const resultEl = document.getElementById('result');
         const readerEl = document.getElementById('reader');
-        const scanBtn = document.getElementById('scan-btn');
 
         const MOBILE_PLATFORMS = new Set(['android', 'ios', 'android_x']);
 
@@ -34,10 +32,11 @@
             tg.ready();
             tg.expand();
         } else {
-            statusEl.textContent = 'Откройте приложение через кнопку бота в Telegram.';
+            statusEl.textContent = 'Откройте через кнопку «Сканировать QR» в боте.';
         }
 
         let html5Scanner = null;
+        let sending = false;
 
         function supportsNativeScanner() {
             return tg
@@ -47,15 +46,42 @@
         }
 
         function sendResult(text) {
-            resultEl.textContent = 'Успешно отсканировано!';
-            if (tg) {
-                tg.sendData(text);
-            } else {
-                resultEl.textContent = 'Результат: ' + text;
+            if (sending) return;
+
+            const url = text.trim();
+            if (!url) return;
+
+            sending = true;
+            resultEl.textContent = url;
+            statusEl.textContent = 'Отправка ссылки боту...';
+
+            if (!tg || typeof tg.sendData !== 'function') {
+                statusEl.textContent = 'Ошибка: откройте сканер через кнопку «Сканировать QR» в чате с ботом.';
+                sending = false;
+                return;
             }
+
+            try {
+                tg.sendData(url);
+            } catch (err) {
+                statusEl.textContent = 'Ошибка sendData: ' + err.message;
+                sending = false;
+                return;
+            }
+
+            // sendData закрывает Web App. Если через 2 сек всё ещё открыто — отправка не сработала.
+            setTimeout(() => {
+                if (sending) {
+                    statusEl.textContent =
+                        'Ссылка не ушла. Закройте это окно, нажмите /start и откройте «Сканировать QR» в чате (не через меню ≡).';
+                    sending = false;
+                }
+            }, 2000);
         }
 
         function startNativeScanner() {
+            statusEl.textContent = 'Наведите камеру на QR-код';
+
             tg.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (text) => {
                 if (!text) return;
                 tg.closeScanQrPopup();
@@ -71,7 +97,6 @@
             } catch (_) {}
             html5Scanner = null;
             readerEl.hidden = true;
-            scanBtn.hidden = false;
         }
 
         async function startWebScanner() {
@@ -87,7 +112,6 @@
             const camera = cameras.find((c) => /back|rear|environment/i.test(c.label)) || cameras.at(-1);
 
             readerEl.hidden = false;
-            scanBtn.hidden = true;
             statusEl.textContent = 'Наведите камеру на QR-код';
 
             html5Scanner = new Html5Qrcode('reader');
@@ -102,10 +126,7 @@
             );
         }
 
-        scanBtn.addEventListener('click', async () => {
-            statusEl.textContent = '';
-            resultEl.textContent = '';
-
+        async function startScanner() {
             try {
                 if (supportsNativeScanner()) {
                     startNativeScanner();
@@ -113,23 +134,18 @@
                 }
 
                 if (tg && !MOBILE_PLATFORMS.has(tg.platform)) {
-                    statusEl.textContent = 'На ПК используется камера устройства (не встроенный сканер Telegram).';
+                    statusEl.textContent = 'Открываем камеру устройства...';
                 }
 
                 await startWebScanner();
             } catch (err) {
                 await stopWebScanner();
                 statusEl.textContent = 'Ошибка: ' + err.message;
-
-                if (tg) {
-                    statusEl.textContent += ' Платформа: ' + tg.platform + ', версия API: ' + (tg.version || 'неизвестно') + '.';
-                }
-
-                if (tg && !MOBILE_PLATFORMS.has(tg.platform)) {
-                    statusEl.textContent += ' Попробуйте открыть бота на телефоне (Android/iOS).';
-                }
+                sending = false;
             }
-        });
+        }
+
+        startScanner();
     </script>
 </body>
 </html>
