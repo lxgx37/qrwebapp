@@ -18,27 +18,26 @@
     <p id="result"></p>
 
     <script>
-        // Инициализируем Telegram Web App
         const tg = window.Telegram.WebApp;
         tg.ready();
-        tg.expand(); // Расширяем на весь экран
-
+        tg.expand();
+    
         document.getElementById('scan-btn').addEventListener('click', () => {
-            // Проверяем, поддерживает ли текущая версия ТГ сканирование
-            if (tg.isVersionAtLeast('6.4')) {
-                // Вызываем нативный сканер QR
+            try {
+                // Вызываем нативный сканер напрямую
                 tg.showScanQrPopup({ text: "Наведите камеру на QR-код" }, function(text) {
-                    document.getElementById('result').innerText = "Успешно отсканировано!";
+                    // Выводим текст на экран для проверки
+                    document.getElementById('result').innerText = "Данные: " + text;
                     
-                    // Закрываем шторку сканера
+                    // Закрываем камеру
                     tg.closeScanQrPopup(); 
                     
-                    // Отправляем данные обратно в бот (закроет Web App)
+                    // Отправляем данные в бот
                     tg.sendData(text); 
                     return true;
                 });
-            } else {
-                alert("Обновите Telegram. Ваша версия не поддерживает сканирование QR.");
+            } catch (error) {
+                alert("Ошибка вызова камеры: " + error.message);
             }
         });
     </script>
