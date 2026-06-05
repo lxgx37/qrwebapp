@@ -32,7 +32,7 @@
             tg.ready();
             tg.expand();
         } else {
-            statusEl.textContent = 'Откройте через кнопку «Сканировать QR» в боте.';
+            statusEl.textContent = 'Откройте через кнопку «📷 Сканировать QR» внизу экрана.';
         }
 
         let html5Scanner = null;
@@ -56,7 +56,7 @@
             statusEl.textContent = 'Отправка ссылки боту...';
 
             if (!tg || typeof tg.sendData !== 'function') {
-                statusEl.textContent = 'Ошибка: откройте сканер через кнопку «Сканировать QR» в чате с ботом.';
+                statusEl.textContent = 'Ошибка: нажмите /start и откройте кнопку «📷 Сканировать QR» внизу экрана.';
                 sending = false;
                 return;
             }
@@ -69,14 +69,16 @@
                 return;
             }
 
-            // sendData закрывает Web App. Если через 2 сек всё ещё открыто — отправка не сработала.
+            statusEl.textContent = 'Ссылка отправлена, ожидайте ответ бота...';
+
+            // sendData работает только при открытии через reply-кнопку внизу экрана.
             setTimeout(() => {
                 if (sending) {
                     statusEl.textContent =
-                        'Ссылка не ушла. Закройте это окно, нажмите /start и откройте «Сканировать QR» в чате (не через меню ≡).';
+                        'Ссылка не ушла. Нажмите /start и откройте кнопку «📷 Сканировать QR» внизу экрана (не кнопку в сообщении).';
                     sending = false;
                 }
-            }, 2000);
+            }, 3000);
         }
 
         function startNativeScanner() {
