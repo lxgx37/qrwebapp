@@ -4,41 +4,130 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QR Scanner WebApp</title>
-    <!-- Подключаем скрипт Telegram Web App -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: var(--tg-theme-bg-color); color: var(--tg-theme-text-color); }
-        button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 8px; background-color: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); cursor: pointer; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+        button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 8px; background-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); cursor: pointer; }
+        #status { color: #888; font-size: 14px; min-height: 20px; }
+        #reader { max-width: 100%; margin: 16px auto; }
     </style>
 </head>
 <body>
 
     <h2>Сканер QR-кодов</h2>
     <button id="scan-btn">Открыть камеру</button>
+    <p id="status"></p>
     <p id="result"></p>
+    <div id="reader" hidden></div>
 
     <script>
-        // Инициализируем Telegram Web App
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand(); // Расширяем на весь экран
+        const tg = window.Telegram?.WebApp;
+        const statusEl = document.getElementById('status');
+        const resultEl = document.getElementById('result');
+        const readerEl = document.getElementById('reader');
+        const scanBtn = document.getElementById('scan-btn');
 
-        document.getElementById('scan-btn').addEventListener('click', () => {
-            // Проверяем, поддерживает ли текущая версия ТГ сканирование
-            if (tg.isVersionAtLeast('6.4')) {
-                // Вызываем нативный сканер QR
-                tg.showScanQrPopup({ text: "Наведите камеру на QR-код" }, function(text) {
-                    document.getElementById('result').innerText = "Успешно отсканировано!";
-                    
-                    // Закрываем шторку сканера
-                    tg.closeScanQrPopup(); 
-                    
-                    // Отправляем данные обратно в бот (закроет Web App)
-                    tg.sendData(text); 
-                    return true;
-                });
+        const MOBILE_PLATFORMS = new Set(['android', 'ios', 'android_x']);
+
+        if (tg) {
+            tg.ready();
+            tg.expand();
+        } else {
+            statusEl.textContent = 'Откройте приложение через кнопку бота в Telegram.';
+        }
+
+        let html5Scanner = null;
+
+        function supportsNativeScanner() {
+            return tg
+                && typeof tg.showScanQrPopup === 'function'
+                && MOBILE_PLATFORMS.has(tg.platform)
+                && (tg.isVersionAtLeast(6.4) || tg.isVersionAtLeast('6.4'));
+        }
+
+        function sendResult(text) {
+            resultEl.textContent = 'Успешно отсканировано!';
+            if (tg) {
+                tg.sendData(text);
             } else {
-                alert("Обновите Telegram. Ваша версия не поддерживает сканирование QR.");
+                resultEl.textContent = 'Результат: ' + text;
+            }
+        }
+
+        function startNativeScanner() {
+            tg.showScanQrPopup({ text: 'Наведите камеру на QR-код' }, (text) => {
+                if (!text) return;
+                tg.closeScanQrPopup();
+                sendResult(text);
+                return true;
+            });
+        }
+
+        async function stopWebScanner() {
+            if (!html5Scanner) return;
+            try {
+                await html5Scanner.stop();
+            } catch (_) {}
+            html5Scanner = null;
+            readerEl.hidden = true;
+            scanBtn.hidden = false;
+        }
+
+        async function startWebScanner() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('Браузер не поддерживает доступ к камере.');
+            }
+
+            const cameras = await Html5Qrcode.getCameras();
+            if (!cameras.length) {
+                throw new Error('Камера не найдена на устройстве.');
+            }
+
+            const camera = cameras.find((c) => /back|rear|environment/i.test(c.label)) || cameras.at(-1);
+
+            readerEl.hidden = false;
+            scanBtn.hidden = true;
+            statusEl.textContent = 'Наведите камеру на QR-код';
+
+            html5Scanner = new Html5Qrcode('reader');
+            await html5Scanner.start(
+                camera.id,
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                async (text) => {
+                    await stopWebScanner();
+                    sendResult(text);
+                },
+                () => {}
+            );
+        }
+
+        scanBtn.addEventListener('click', async () => {
+            statusEl.textContent = '';
+            resultEl.textContent = '';
+
+            try {
+                if (supportsNativeScanner()) {
+                    startNativeScanner();
+                    return;
+                }
+
+                if (tg && !MOBILE_PLATFORMS.has(tg.platform)) {
+                    statusEl.textContent = 'На ПК используется камера устройства (не встроенный сканер Telegram).';
+                }
+
+                await startWebScanner();
+            } catch (err) {
+                await stopWebScanner();
+                statusEl.textContent = 'Ошибка: ' + err.message;
+
+                if (tg) {
+                    statusEl.textContent += ' Платформа: ' + tg.platform + ', версия API: ' + (tg.version || 'неизвестно') + '.';
+                }
+
+                if (tg && !MOBILE_PLATFORMS.has(tg.platform)) {
+                    statusEl.textContent += ' Попробуйте открыть бота на телефоне (Android/iOS).';
+                }
             }
         });
     </script>
